@@ -1,0 +1,43 @@
+rules:
+  - id: javascript-sensitive-value-in-log
+    message: A logging call contains a value whose name suggests sensitive data. Codex must inspect the data flow and central policy before deciding.
+    languages:
+      - javascript
+      - typescript
+    severity: WARNING
+    patterns:
+      - pattern-either:
+          - pattern: $LOGGER.$METHOD($VALUE)
+          - pattern: $LOGGER.$METHOD($VALUE, ...)
+          - pattern: $LOGGER.$METHOD(..., $VALUE, ...)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(trace|debug|info|warn|error|fatal)$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: (?i).*(account|iban|card|pan|cvv|password|secret|token|authorization|email|phone|customer|requestBody|responseBody).*
+    metadata:
+      category: security
+      confidence: LOW
+      cwe:
+        - "CWE-532: Insertion of Sensitive Information into Log File"
+
+  - id: javascript-sensitive-template-in-log
+    message: A log message interpolates a value whose name suggests sensitive data. String interpolation can bypass structured logger redaction.
+    languages:
+      - javascript
+      - typescript
+    severity: ERROR
+    patterns:
+      - pattern: $LOGGER.$METHOD(`...${$VALUE}...`)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(trace|debug|info|warn|error|fatal)$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: (?i).*(account|iban|card|pan|cvv|password|secret|token|authorization|email|phone|customer|requestBody|responseBody).*
+    metadata:
+      category: security
+      confidence: MEDIUM
+      cwe:
+        - "CWE-532: Insertion of Sensitive Information into Log File"

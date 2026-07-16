@@ -1,0 +1,103 @@
+name: Central Sensitive Log Review
+
+on:
+  pull_request:
+  merge_group:
+
+concurrency:
+  group: central-sensitive-log-review-${{ github.repository }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  review:
+    name: Central Sensitive Log Review
+    runs-on: ubuntu-latest
+    env:
+      TARGET_REPOSITORY_PATH: target
+      ARTIFACTS_PATH: artifacts
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+      CODEX_MODEL: ${{ vars.CODEX_MODEL || 'gpt-5.5' }}
+
+    steps:
+      - name: Checkout trusted control plane
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: idir-oai/security-control-plane
+          ref: ${{ github.workflow_sha }}
+          path: .
+          persist-credentials: false
+
+      - name: Checkout target pull request
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install Semgrep
+        run: python3 -m pip install --disable-pip-version-check semgrep==1.168.0
+
+      - name: Generate Semgrep candidates
+        env:
+          TARGET_ROOT: ${{ github.workspace }}/target
+          OUTPUT_PATH: ${{ github.workspace }}/artifacts/semgrep.json
+        run: bash scripts/run-semgrep.sh
+
+      - name: Count candidates
+        id: candidates
+        run: node scripts/count-candidates.mjs artifacts/semgrep.json
+
+      - name: Build contextual review prompt
+        if: steps.candidates.outputs.has_candidates == 'true'
+        env:
+          TARGET_ROOT: ${{ github.workspace }}/target
+          OUTPUT_PATH: ${{ github.workspace }}/artifacts/codex-prompt.md
+          SEMGREP_PATH: ${{ github.workspace }}/artifacts/semgrep.json
+        run: node scripts/build-review-prompt.mjs
+
+      - name: Remove target-controlled Codex instructions
+        if: steps.candidates.outputs.has_candidates == 'true'
+        run: node scripts/prepare-review-workspace.mjs target
+
+      - name: Require standard project API key
+        if: steps.candidates.outputs.has_candidates == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "Configure OPENAI_API_KEY as an organization secret for this repository." >&2
+            exit 1
+          fi
+
+      - name: Run Codex adjudication
+        if: steps.candidates.outputs.has_candidates == 'true'
+        uses: openai/codex-action@dd78cb653811af44014baa08fe954e28d32c1bf9
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: artifacts/codex-prompt.md
+          output-schema-file: schemas/codex-review.schema.json
+          output-file: artifacts/codex-review.json
+          sandbox: read-only
+          safety-strategy: drop-sudo
+          model: ${{ env.CODEX_MODEL }}
+
+      - name: Create empty passing review
+        if: steps.candidates.outputs.has_candidates == 'false'
+        run: node scripts/create-empty-review.mjs artifacts/codex-review.json
+
+      - name: Enforce central logging policy
+        if: ${{ always() && hashFiles('artifacts/codex-review.json') != '' }}
+        run: node scripts/enforce-review.mjs artifacts/codex-review.json

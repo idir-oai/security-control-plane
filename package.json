@@ -1,0 +1,17 @@
+{
+  "name": "security-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Central GitHub ruleset workflow for Codex-assisted sensitive log review.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test",
+    "scan": "bash scripts/run-semgrep.sh",
+    "review:prompt": "node scripts/build-review-prompt.mjs",
+    "review:enforce": "node scripts/enforce-review.mjs artifacts/codex-review.json"
+  },
+  "license": "MIT"
+}
