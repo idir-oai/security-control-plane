@@ -1,5 +1,7 @@
 # Security Control Plane
 
+[![Central Sensitive Log Review](https://github.com/idir-oai/security-control-plane/actions/workflows/sensitive-log-review.yml/badge.svg)](https://github.com/idir-oai/security-control-plane/actions/workflows/sensitive-log-review.yml)
+
 Repositorio central para aplicar una revision de datos sensibles en logs a multiples repositorios mediante GitHub organization rulesets y Codex.
 
 El workflow se define una sola vez en:
